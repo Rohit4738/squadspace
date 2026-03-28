@@ -1,13 +1,190 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css">
-    <title>Document</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SquadSpace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
-    <h1>Hello World</h1>
-    <script src="app.js"></script>
+
+  <!-- LOADER -->
+  <div id="loader" class="loader">
+    <div class="loader-inner">
+      <div class="loader-logo">SS</div>
+      <div class="loader-bar"><div class="loader-fill"></div></div>
+    </div>
+  </div>
+
+  <!-- SCREEN 1: USERNAME -->
+  <div id="screen-username" class="screen">
+    <div class="noise"></div>
+    <div class="username-layout">
+      <div class="brand-block">
+        <div class="brand-logo">SS</div>
+        <h1 class="brand-name">SquadSpace</h1>
+        <p class="brand-tagline">Your private crew. Your world.</p>
+      </div>
+      <div class="glass-card">
+        <p class="card-label">WHO ARE YOU?</p>
+        <input id="username-input" class="field" type="text"
+          placeholder="enter your name..." maxlength="20" autocomplete="off"
+          onkeydown="if(event.key==='Enter')saveUsername()"/>
+        <button class="btn-primary" onclick="saveUsername()">
+          <span>Enter</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2.5">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: HOME -->
+  <div id="screen-home" class="screen">
+    <div class="noise"></div>
+    <div class="home-layout">
+      <header class="home-header">
+        <div class="brand-pill">SS</div>
+        <div class="user-chip">
+          <span id="display-username">You</span>
+          <button class="icon-btn" onclick="changeUsername()" title="Change name">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2.5">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="home-content">
+        <h2 class="home-title">Ready to link up?</h2>
+        <div class="choice-grid">
+
+          <div class="choice-card" id="card-create">
+            <div class="choice-icon">✦</div>
+            <h3>Create</h3>
+            <p>Start a new squad</p>
+            <div class="choice-form" id="create-section">
+              <input id="family-name-input" class="field" type="text"
+                placeholder="squad name..." maxlength="30" autocomplete="off"
+                onkeydown="if(event.key==='Enter')createFamily()"/>
+              <button class="btn-primary" onclick="createFamily()">
+                <span>Create Squad</span>
+              </button>
+            </div>
+            <button class="choice-toggle" onclick="toggleSection('create')">Get Started →</button>
+          </div>
+
+          <div class="choice-card" id="card-join">
+            <div class="choice-icon">⬡</div>
+            <h3>Join</h3>
+            <p>Enter an invite code</p>
+            <div class="choice-form" id="join-section">
+              <input id="invite-code-input" class="field field-mono" type="text"
+                placeholder="XXXXXX" maxlength="6" autocomplete="off"
+                oninput="this.value=this.value.toUpperCase()"
+                onkeydown="if(event.key==='Enter')joinFamily()"/>
+              <button class="btn-primary" onclick="joinFamily()">
+                <span>Join Squad</span>
+              </button>
+            </div>
+            <button class="choice-toggle" onclick="toggleSection('join')">Use Code →</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: DASHBOARD -->
+  <div id="screen-family" class="screen">
+    <div class="noise"></div>
+
+    <nav class="dash-nav">
+      <div class="nav-left">
+        <div class="brand-pill">SS</div>
+        <div class="nav-family">
+          <span id="family-name-display">Squad</span>
+          <span id="member-count-display" class="member-pill">1/6</span>
+        </div>
+      </div>
+      <div class="nav-right">
+        <div class="code-chip">
+          <span class="code-label">CODE</span>
+          <span id="invite-code-display" class="code-value">------</span>
+          <button class="icon-btn" onclick="copyInviteCode()" title="Copy code">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2.5">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+        </div>
+        <div class="user-chip">
+          <span id="header-username"></span>
+          <button class="icon-btn" onclick="changeUsername()" title="Change name">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2.5">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+        </div>
+        <button class="leave-btn" onclick="leaveFamily()">Leave</button>
+      </div>
+    </nav>
+
+    <main class="dash-main">
+
+      <!-- GAME REQUESTS -->
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-icon">⬡</span>
+            <h3>Game Requests</h3>
+          </div>
+          <span class="panel-count" id="games-count">0</span>
+        </div>
+        <div class="panel-input">
+          <input id="game-input" class="field" type="text"
+            placeholder="suggest a game..." maxlength="60" autocomplete="off"
+            onkeydown="if(event.key==='Enter')addGameRequest()"/>
+          <button class="btn-add" onclick="addGameRequest()">+</button>
+        </div>
+        <div id="game-list" class="feed"></div>
+      </section>
+
+      <!-- CHECKPOINTS -->
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-icon">✦</span>
+            <h3>Checkpoints</h3>
+          </div>
+          <span class="panel-count" id="checkpoints-count">0</span>
+        </div>
+        <div class="panel-input">
+          <input id="checkpoint-input" class="field" type="text"
+            placeholder="what's your checkpoint?" maxlength="160" autocomplete="off"
+            onkeydown="if(event.key==='Enter')addCheckpoint()"/>
+          <button class="btn-add" onclick="addCheckpoint()">+</button>
+        </div>
+        <div id="checkpoint-list" class="feed"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
 </body>
 </html>
