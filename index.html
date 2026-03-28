@@ -19,9 +19,9 @@
     </div>
   </div>
 
-  <!-- ═══════════════════════════════
+  <!-- ══════════════════════════════════
        SCREEN: LANDING
-  ═══════════════════════════════ -->
+  ══════════════════════════════════ -->
   <div id="screen-landing" class="screen">
     <div class="noise"></div>
 
@@ -33,57 +33,50 @@
     <section class="hero">
       <div class="hero-badge">Private · Realtime · Free</div>
       <h1 class="hero-title">Your squad,<br/><span class="accent-text">one space.</span></h1>
-      <p class="hero-sub">SquadSpace is a private room for you and up to 5 friends. Share game requests, drop life updates, and stay in sync — no algorithm, no strangers, no noise.</p>
+      <p class="hero-sub">A private room for you and up to 5 friends. Share game requests, drop life updates, and stay in sync — no algorithm, no strangers, no noise.</p>
       <div class="hero-actions">
         <button class="btn-primary hero-cta" onclick="showScreen('screen-auth')">
           Get Started Free
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </button>
-        <a href="#how" class="btn-ghost">See how it works ↓</a>
+        <a href="#how" class="btn-ghost">How it works ↓</a>
       </div>
     </section>
 
-    <!-- FEATURE CARDS -->
+    <!-- FEATURES -->
     <section class="features" id="how">
       <div class="feat-label">WHAT YOU GET</div>
       <div class="feat-grid">
-
         <div class="feat-card">
           <div class="feat-icon">🔑</div>
           <h3>Invite Codes</h3>
-          <p>Create a squad and get a 6-letter code like <span class="mono">XK92PL</span>. Share it with your crew — only people with the code can join. Max 6 members.</p>
+          <p>Create a squad and get a 6-letter code like <span class="mono-tag">XK92PL</span>. Only people with the code can join. Max 6 members per squad.</p>
         </div>
-
         <div class="feat-card">
           <div class="feat-icon">🎮</div>
           <h3>Game Requests</h3>
-          <p>Suggest games for the group. Everyone in your squad sees the list in real time — no more "what should we play?" in 5 different chats.</p>
+          <p>Suggest games for the group. Everyone sees the list live — no more "what should we play?" scattered across 5 chats.</p>
         </div>
-
         <div class="feat-card">
           <div class="feat-icon">📝</div>
           <h3>Checkpoints</h3>
-          <p>Drop a quick update — "just finished Elden Ring", "got a new PC". Like a private feed only your squad sees. Stays forever.</p>
+          <p>Drop a quick update — "just finished Elden Ring", "got a new PC". A private feed only your squad sees.</p>
         </div>
-
         <div class="feat-card">
           <div class="feat-icon">⚡</div>
           <h3>Realtime Sync</h3>
-          <p>No refresh needed. When anyone posts, it instantly appears on everyone's screen. Powered by Supabase Realtime under the hood.</p>
+          <p>No refresh needed. When anyone posts, it appears on everyone's screen instantly. Powered by Supabase Realtime.</p>
         </div>
-
         <div class="feat-card">
           <div class="feat-icon">🔒</div>
           <h3>Completely Private</h3>
-          <p>Your squad's data is protected. No one outside your group can read your posts. Row-level security enforced at the database level.</p>
+          <p>Your squad's data is locked down. No one outside can read your posts — enforced at the database level.</p>
         </div>
-
         <div class="feat-card">
-          <div class="feat-icon">👤</div>
-          <h3>No Account Hassle</h3>
-          <p>Sign in with just your email — we send a magic link, no password needed. Your identity and squad persist across every session.</p>
+          <div class="feat-icon">🚀</div>
+          <h3>One-Click Sign In</h3>
+          <p>Sign in with your Google account. No passwords, no forms — just pick your account and you're in.</p>
         </div>
-
       </div>
     </section>
 
@@ -93,38 +86,32 @@
       <div class="steps">
         <div class="step">
           <div class="step-num">01</div>
-          <div class="step-body">
-            <h4>Enter your email</h4>
-            <p>We send a magic link — click it and you're in. No password ever.</p>
-          </div>
+          <h4>Sign in with Google</h4>
+          <p>One click. No password. Your Google account is all you need.</p>
         </div>
         <div class="step-arrow">→</div>
         <div class="step">
           <div class="step-num">02</div>
-          <div class="step-body">
-            <h4>Create or join a squad</h4>
-            <p>Make a new squad and get a code, or enter a friend's code to join theirs.</p>
-          </div>
+          <h4>Create or join a squad</h4>
+          <p>Make a new squad and get a code, or enter a friend's code to join.</p>
         </div>
         <div class="step-arrow">→</div>
         <div class="step">
           <div class="step-num">03</div>
-          <div class="step-body">
-            <h4>Post and vibe</h4>
-            <p>Share game requests and checkpoints. Everyone sees everything in real time.</p>
-          </div>
+          <h4>Post and vibe</h4>
+          <p>Share game requests and checkpoints. Everyone sees it instantly.</p>
         </div>
       </div>
     </section>
 
     <footer class="land-footer">
-      <span>SquadSpace · Free forever · Built with Supabase + Vercel</span>
+      SquadSpace · Free forever · Built with Supabase + Vercel
     </footer>
   </div>
 
-  <!-- ═══════════════════════════════
-       SCREEN: AUTH (Magic Link)
-  ═══════════════════════════════ -->
+  <!-- ══════════════════════════════════
+       SCREEN: AUTH
+  ══════════════════════════════════ -->
   <div id="screen-auth" class="screen">
     <div class="noise"></div>
     <div class="auth-layout">
@@ -132,71 +119,67 @@
       <div class="auth-card">
         <div class="brand-logo">SS</div>
         <h2 class="auth-title">Welcome to SquadSpace</h2>
-        <p class="auth-sub">Enter your email and we'll send you a magic link — no password needed.</p>
+        <p class="auth-sub">Sign in with your Google account to get started. One click — no passwords.</p>
 
-        <div id="auth-form">
-          <input id="email-input" class="field" type="email" placeholder="your@email.com" autocomplete="email"
-            onkeydown="if(event.key==='Enter')sendMagicLink()"/>
-          <button class="btn-primary" id="magic-btn" onclick="sendMagicLink()">
-            <span>Send Magic Link</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
-          </button>
-        </div>
+        <button class="btn-google" onclick="signInWithGoogle()">
+          <svg width="20" height="20" viewBox="0 0 48 48">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+          </svg>
+          Continue with Google
+        </button>
 
-        <div id="auth-sent" class="auth-sent hidden">
-          <div class="sent-icon">📬</div>
-          <h3>Check your email!</h3>
-          <p>We sent a magic link to <strong id="sent-email"></strong>. Click it to sign in — it expires in 1 hour.</p>
-          <button class="btn-ghost-sm" onclick="resetAuth()">Use a different email</button>
-        </div>
+        <div class="auth-divider"><span>safe · secure · instant</span></div>
+        <p class="auth-note">We only use your Google account to identify you. We don't post anything or access your emails.</p>
       </div>
     </div>
   </div>
 
-  <!-- ═══════════════════════════════
+  <!-- ══════════════════════════════════
        SCREEN: PROFILE SETUP
-  ═══════════════════════════════ -->
+  ══════════════════════════════════ -->
   <div id="screen-profile" class="screen">
     <div class="noise"></div>
     <div class="auth-layout">
-      <div class="auth-card">
+      <div class="auth-card profile-card">
         <div class="brand-logo">SS</div>
-        <h2 class="auth-title">Set up your profile</h2>
-        <p class="auth-sub">Pick a name and a photo for your squad to see.</p>
+        <h2 class="auth-title">One last thing</h2>
+        <p class="auth-sub">Set a username for your squad to see. Photo is optional.</p>
 
         <!-- Avatar upload -->
         <div class="avatar-upload-area" onclick="document.getElementById('avatar-file').click()">
           <div class="avatar-preview" id="avatar-preview">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+            <!-- filled by JS with Google photo or placeholder -->
           </div>
           <div class="avatar-hint">
-            <span class="avatar-hint-title">Upload photo</span>
-            <span class="avatar-hint-sub">PNG, JPG up to 2MB</span>
+            <span class="avatar-hint-title">Profile photo</span>
+            <span class="avatar-hint-sub">click to change · optional</span>
           </div>
         </div>
         <input type="file" id="avatar-file" accept="image/*" class="hidden" onchange="previewAvatar(event)"/>
 
-        <input id="profile-username" class="field" type="text" placeholder="your username..." maxlength="20" autocomplete="off"
+        <input id="profile-username" class="field" type="text"
+          placeholder="pick a username..." maxlength="20" autocomplete="off"
           onkeydown="if(event.key==='Enter')saveProfile()"/>
-        <button class="btn-primary" onclick="saveProfile()">
-          <span>Enter SquadSpace</span>
-        </button>
+
+        <button class="btn-primary" onclick="saveProfile()">Enter SquadSpace →</button>
+        <button class="btn-skip" onclick="saveProfile(true)">Skip photo, just set username</button>
       </div>
     </div>
   </div>
 
-  <!-- ═══════════════════════════════
+  <!-- ══════════════════════════════════
        SCREEN: HOME
-  ═══════════════════════════════ -->
+  ══════════════════════════════════ -->
   <div id="screen-home" class="screen">
     <div class="noise"></div>
     <div class="home-layout">
       <header class="home-header">
         <div class="brand-pill">SS</div>
         <div class="header-user">
-          <div class="user-avatar-sm" id="home-avatar">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-          </div>
+          <div class="user-avatar-sm" id="home-avatar"></div>
           <span id="display-username">You</span>
           <button class="icon-btn" onclick="openEditProfile()" title="Edit profile">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -215,7 +198,8 @@
             <h3>Create a Squad</h3>
             <p>Start fresh — get a unique 6-letter invite code to share with friends.</p>
             <div class="choice-form" id="create-section">
-              <input id="family-name-input" class="field" type="text" placeholder="squad name..." maxlength="30" autocomplete="off"
+              <input id="family-name-input" class="field" type="text"
+                placeholder="squad name..." maxlength="30" autocomplete="off"
                 onkeydown="if(event.key==='Enter')createFamily()"/>
               <button class="btn-primary" onclick="createFamily()">Create Squad</button>
             </div>
@@ -227,7 +211,8 @@
             <h3>Join a Squad</h3>
             <p>Got a code from a friend? Enter it here to jump into their squad.</p>
             <div class="choice-form" id="join-section">
-              <input id="invite-code-input" class="field field-mono" type="text" placeholder="XXXXXX" maxlength="6" autocomplete="off"
+              <input id="invite-code-input" class="field field-mono" type="text"
+                placeholder="XXXXXX" maxlength="6" autocomplete="off"
                 oninput="this.value=this.value.toUpperCase()"
                 onkeydown="if(event.key==='Enter')joinFamily()"/>
               <button class="btn-primary" onclick="joinFamily()">Join Squad</button>
@@ -240,9 +225,9 @@
     </div>
   </div>
 
-  <!-- ═══════════════════════════════
+  <!-- ══════════════════════════════════
        SCREEN: DASHBOARD
-  ═══════════════════════════════ -->
+  ══════════════════════════════════ -->
   <div id="screen-family" class="screen">
     <div class="noise"></div>
 
@@ -262,10 +247,8 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
         </div>
-        <div class="user-chip" onclick="openEditProfile()" style="cursor:pointer" title="Edit profile">
-          <div class="user-avatar-sm" id="dash-avatar">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-          </div>
+        <div class="user-chip" onclick="openEditProfile()" style="cursor:pointer">
+          <div class="user-avatar-sm" id="dash-avatar"></div>
           <span id="header-username"></span>
         </div>
         <button class="leave-btn" onclick="leaveFamily()">Leave</button>
@@ -273,14 +256,14 @@
     </nav>
 
     <main class="dash-main">
-
       <section class="panel">
         <div class="panel-header">
           <div class="panel-title"><span class="panel-icon">⬡</span><h3>Game Requests</h3></div>
           <span class="panel-count" id="games-count">0</span>
         </div>
         <div class="panel-input">
-          <input id="game-input" class="field" type="text" placeholder="suggest a game..." maxlength="60" autocomplete="off"
+          <input id="game-input" class="field" type="text"
+            placeholder="suggest a game..." maxlength="60" autocomplete="off"
             onkeydown="if(event.key==='Enter')addGameRequest()"/>
           <button class="btn-add" onclick="addGameRequest()">+</button>
         </div>
@@ -293,38 +276,34 @@
           <span class="panel-count" id="checkpoints-count">0</span>
         </div>
         <div class="panel-input">
-          <input id="checkpoint-input" class="field" type="text" placeholder="what's your checkpoint?" maxlength="160" autocomplete="off"
+          <input id="checkpoint-input" class="field" type="text"
+            placeholder="what's your checkpoint?" maxlength="160" autocomplete="off"
             onkeydown="if(event.key==='Enter')addCheckpoint()"/>
           <button class="btn-add" onclick="addCheckpoint()">+</button>
         </div>
         <div id="checkpoint-list" class="feed"></div>
       </section>
-
     </main>
   </div>
 
-  <!-- ═══════════════════════════════
+  <!-- ══════════════════════════════════
        MODAL: EDIT PROFILE
-  ═══════════════════════════════ -->
+  ══════════════════════════════════ -->
   <div id="modal-profile" class="modal-overlay hidden" onclick="closeEditProfile(event)">
     <div class="modal-box">
       <h3 class="modal-title">Edit Profile</h3>
-
       <div class="avatar-upload-area" onclick="document.getElementById('edit-avatar-file').click()">
-        <div class="avatar-preview" id="edit-avatar-preview">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-        </div>
+        <div class="avatar-preview" id="edit-avatar-preview"></div>
         <div class="avatar-hint">
           <span class="avatar-hint-title">Change photo</span>
-          <span class="avatar-hint-sub">click to upload</span>
+          <span class="avatar-hint-sub">click to upload · optional</span>
         </div>
       </div>
       <input type="file" id="edit-avatar-file" accept="image/*" class="hidden" onchange="previewEditAvatar(event)"/>
-
       <input id="edit-username" class="field" type="text" placeholder="username..." maxlength="20" autocomplete="off"/>
       <div class="modal-actions">
         <button class="btn-ghost-sm" onclick="closeEditProfile()">Cancel</button>
-        <button class="btn-primary modal-save" onclick="saveEditProfile()">Save Changes</button>
+        <button class="btn-primary modal-save" onclick="saveEditProfile()">Save</button>
       </div>
     </div>
   </div>
