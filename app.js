@@ -1,40 +1,69 @@
-// SquadSpace — app.js
-// Supabase credentials are loaded from /api/config (server-side)
-// They are NEVER hardcoded here
+/* ═══════════════════════════════════════════════
+   SQUADSPACE · APP.JS
+   Auth: Supabase Magic Link
+   Storage: Supabase Storage (avatars bucket)
+   Persistence: Supabase session (survives refresh/close)
+═══════════════════════════════════════════════ */
 
 let db = null;
-let currentUser   = null;
+let currentUser   = null;  // our users table row
 let currentFamily = null;
 let realtimeSubs  = [];
+let pendingAvatarFile = null; // for profile setup
+let pendingEditAvatarFile = null; // for edit modal
 
-// ── BOOT ──
+// ═══════════════════════════════════
+// 🚀 BOOT
+// ═══════════════════════════════════
 window.addEventListener('load', async () => {
   let cfg;
   try {
     const res = await fetch('/api/config');
     cfg = await res.json();
-  } catch (e) {
-    showToast('Failed to load app. Refresh.', 'err');
-    return;
-  }
-
-  if (!cfg.url || !cfg.key) {
-    showToast('Config missing. Check Vercel env vars.', 'err');
+  } catch {
+    showToast('Failed to load. Refresh.', 'err');
     return;
   }
 
   db = supabase.createClient(cfg.url, cfg.key);
 
-  const saved = loadLocal();
-  if (!saved) { hideLoader(); showScreen('screen-username'); return; }
+  // Listen for auth state changes (handles magic link redirect too)
+  db.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+      if (session) {
+        await handleSignedInSession(session);
+      } else {
+        hideLoader();
+        showScreen('screen-landing');
+      }
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      currentFamily = null;
+      hideLoader();
+      showScreen('screen-landing');
+    }
+  });
+});
 
-  const { data: dbUser, error } = await db
-    .from('users').select('*').eq('id', saved.id).single();
+async function handleSignedInSession(session) {
+  const authUser = session.user;
 
-  if (error || !dbUser) { hideLoader(); showScreen('screen-username'); return; }
+  // Check if they have a profile in our users table
+  const { data: profile } = await db
+    .from('users')
+    .select('*')
+    .eq('id', authUser.id)
+    .single();
 
-  currentUser = dbUser;
-  saveLocal(currentUser);
+  if (!profile || !profile.username) {
+    // New user — needs to set up profile
+    hideLoader();
+    showScreen('screen-profile');
+    return;
+  }
+
+  currentUser = profile;
+  updateAllAvatars(profile.avatar_url);
 
   if (currentUser.family_id) {
     await loadFamilyAndEnter(currentUser.family_id);
@@ -43,64 +72,200 @@ window.addEventListener('load', async () => {
     document.getElementById('display-username').textContent = currentUser.username;
     showScreen('screen-home');
   }
-});
+}
 
 function hideLoader() {
   document.getElementById('loader').classList.add('hidden');
 }
 
-// ── LOCAL STORAGE ──
-function loadLocal() {
-  try { return JSON.parse(localStorage.getItem('sq_user')); }
-  catch { return null; }
-}
-function saveLocal(u) {
-  localStorage.setItem('sq_user', JSON.stringify(u));
+// ═══════════════════════════════════
+// 🔐 AUTH — Magic Link
+// ═══════════════════════════════════
+async function sendMagicLink() {
+  const email = document.getElementById('email-input').value.trim();
+  if (!email || !email.includes('@')) {
+    showToast('Enter a valid email', 'err'); return;
+  }
+
+  const btn = document.getElementById('magic-btn');
+  btn.disabled = true;
+  btn.querySelector('span').textContent = 'Sending...';
+
+  const { error } = await db.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.origin }
+  });
+
+  if (error) {
+    showToast('Could not send link. Try again.', 'err');
+    btn.disabled = false;
+    btn.querySelector('span').textContent = 'Send Magic Link';
+    return;
+  }
+
+  document.getElementById('sent-email').textContent = email;
+  document.getElementById('auth-form').classList.add('hidden');
+  document.getElementById('auth-sent').classList.remove('hidden');
 }
 
-// ── USER ──
-function genId() {
-  return 'u_' + Math.random().toString(36).slice(2, 11);
+function resetAuth() {
+  document.getElementById('auth-form').classList.remove('hidden');
+  document.getElementById('auth-sent').classList.add('hidden');
+  document.getElementById('email-input').value = '';
+  const btn = document.getElementById('magic-btn');
+  btn.disabled = false;
+  btn.querySelector('span').textContent = 'Send Magic Link';
 }
 
-async function saveUsername() {
-  const raw = document.getElementById('username-input').value.trim();
-  if (!raw || raw.length < 2) { showToast('Name needs 2+ characters', 'err'); return; }
+async function signOut() {
+  realtimeSubs.forEach(s => db.removeChannel(s));
+  realtimeSubs = [];
+  await db.auth.signOut();
+  currentUser = null;
+  currentFamily = null;
+  showScreen('screen-landing');
+  showToast('Signed out', 'ok');
+}
 
-  const id = genId();
-  const { data, error } = await db
-    .from('users').insert({ id, username: raw, family_id: null })
+// ═══════════════════════════════════
+// 👤 PROFILE SETUP (first time)
+// ═══════════════════════════════════
+function previewAvatar(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { showToast('Image must be under 2MB', 'err'); return; }
+  pendingAvatarFile = file;
+  const url = URL.createObjectURL(file);
+  const preview = document.getElementById('avatar-preview');
+  preview.innerHTML = `<img src="${url}" alt="avatar"/>`;
+}
+
+async function saveProfile() {
+  const username = document.getElementById('profile-username').value.trim();
+  if (!username || username.length < 2) { showToast('Name needs 2+ characters', 'err'); return; }
+
+  const { data: { user: authUser } } = await db.auth.getUser();
+  if (!authUser) { showToast('Not signed in', 'err'); return; }
+
+  let avatar_url = null;
+
+  // Upload avatar if provided
+  if (pendingAvatarFile) {
+    avatar_url = await uploadAvatar(authUser.id, pendingAvatarFile);
+  }
+
+  // Upsert into users table using auth user ID
+  const { data, error } = await db.from('users')
+    .upsert({
+      id: authUser.id,
+      email: authUser.email,
+      username,
+      avatar_url,
+      family_id: null
+    })
     .select().single();
 
-  if (error) { showToast('Could not save. Try again.', 'err'); return; }
+  if (error) { showToast('Could not save profile', 'err'); console.error(error); return; }
 
   currentUser = data;
-  saveLocal(currentUser);
+  updateAllAvatars(currentUser.avatar_url);
   document.getElementById('display-username').textContent = currentUser.username;
   showScreen('screen-home');
-  showToast(`Welcome, ${raw}! 🎉`, 'ok');
+  showToast(`Welcome, ${username}! 🎉`, 'ok');
 }
 
-async function changeUsername() {
-  const n = prompt('New username:', currentUser.username);
-  if (!n || !n.trim()) return;
-  const trimmed = n.trim().slice(0, 20);
-  if (trimmed === currentUser.username) return;
-
-  const { error } = await db.from('users')
-    .update({ username: trimmed }).eq('id', currentUser.id);
-  if (error) { showToast('Update failed.', 'err'); return; }
-
-  currentUser.username = trimmed;
-  saveLocal(currentUser);
-  document.getElementById('display-username').textContent  = trimmed;
-  document.getElementById('header-username').textContent   = trimmed;
-  showToast('Name updated ✓', 'ok');
+// ═══════════════════════════════════
+// ✏️ EDIT PROFILE MODAL
+// ═══════════════════════════════════
+function openEditProfile() {
+  document.getElementById('edit-username').value = currentUser.username;
+  // Show current avatar
+  const preview = document.getElementById('edit-avatar-preview');
+  if (currentUser.avatar_url) {
+    preview.innerHTML = `<img src="${currentUser.avatar_url}" alt="avatar"/>`;
+  } else {
+    preview.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
+  }
+  pendingEditAvatarFile = null;
+  document.getElementById('modal-profile').classList.remove('hidden');
 }
 
-// ── HOME TOGGLES ──
+function closeEditProfile(e) {
+  if (e && e.target !== document.getElementById('modal-profile')) return;
+  document.getElementById('modal-profile').classList.add('hidden');
+}
+
+function previewEditAvatar(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { showToast('Image must be under 2MB', 'err'); return; }
+  pendingEditAvatarFile = file;
+  const url = URL.createObjectURL(file);
+  const preview = document.getElementById('edit-avatar-preview');
+  preview.innerHTML = `<img src="${url}" alt="avatar"/>`;
+}
+
+async function saveEditProfile() {
+  const username = document.getElementById('edit-username').value.trim();
+  if (!username || username.length < 2) { showToast('Name needs 2+ characters', 'err'); return; }
+
+  let avatar_url = currentUser.avatar_url;
+
+  if (pendingEditAvatarFile) {
+    const uploaded = await uploadAvatar(currentUser.id, pendingEditAvatarFile);
+    if (uploaded) avatar_url = uploaded;
+  }
+
+  const { data, error } = await db.from('users')
+    .update({ username, avatar_url })
+    .eq('id', currentUser.id)
+    .select().single();
+
+  if (error) { showToast('Update failed', 'err'); return; }
+
+  currentUser = data;
+  updateAllAvatars(currentUser.avatar_url);
+  document.getElementById('display-username').textContent = username;
+  document.getElementById('header-username').textContent  = username;
+  document.getElementById('modal-profile').classList.add('hidden');
+  showToast('Profile updated ✓', 'ok');
+}
+
+// ── Upload avatar to Supabase Storage ──
+async function uploadAvatar(userId, file) {
+  const ext  = file.name.split('.').pop();
+  const path = `${userId}/avatar.${ext}`;
+
+  const { error } = await db.storage.from('avatars').upload(path, file, {
+    upsert: true, contentType: file.type
+  });
+
+  if (error) { showToast('Avatar upload failed', 'err'); console.error(error); return null; }
+
+  const { data } = db.storage.from('avatars').getPublicUrl(path);
+  // Add cache-busting to force browser reload of new avatar
+  return data.publicUrl + '?t=' + Date.now();
+}
+
+// ── Update all avatar elements on screen ──
+function updateAllAvatars(url) {
+  const els = ['home-avatar', 'dash-avatar'];
+  els.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (url) {
+      el.innerHTML = `<img src="${url}" alt="avatar"/>`;
+    } else {
+      el.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
+    }
+  });
+}
+
+// ═══════════════════════════════════
+// 🏠 HOME NAV
+// ═══════════════════════════════════
 function toggleSection(which) {
-  const ids = { create: 'create-section', join: 'join-section' };
+  const ids  = { create: 'create-section', join: 'join-section' };
   const btns = {
     create: document.querySelector('#card-create .choice-toggle'),
     join:   document.querySelector('#card-join .choice-toggle')
@@ -117,11 +282,12 @@ function toggleSection(which) {
   }
 }
 
-// ── FAMILY ──
+// ═══════════════════════════════════
+// 👨‍👩‍👧‍👦 FAMILY
+// ═══════════════════════════════════
 function genCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from({length: 6}, () =>
-    chars[Math.floor(Math.random() * chars.length)]).join('');
+  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
 async function createFamily() {
@@ -129,29 +295,25 @@ async function createFamily() {
   if (!name) { showToast('Enter a squad name!', 'err'); return; }
 
   const invite_code = genCode();
-  const { data: fam, error: e1 } = await db
-    .from('families')
+  const { data: fam, error: e1 } = await db.from('families')
     .insert({ name, invite_code, created_by: currentUser.id, member_count: 1 })
     .select().single();
 
-  if (e1) { showToast('Error creating squad.', 'err'); return; }
+  if (e1) { showToast('Error creating squad.', 'err'); console.error(e1); return; }
 
   await db.from('users').update({ family_id: fam.id }).eq('id', currentUser.id);
 
   currentUser.family_id = fam.id;
-  saveLocal(currentUser);
   currentFamily = fam;
   enterDashboard();
-  showToast(`"${name}" created!  Code: ${invite_code}`, 'ok');
+  showToast(`"${name}" created! Code: ${invite_code}`, 'ok');
 }
 
 async function joinFamily() {
   const code = document.getElementById('invite-code-input').value.trim().toUpperCase();
   if (code.length !== 6) { showToast('Code must be 6 characters', 'err'); return; }
 
-  const { data: fam, error } = await db
-    .from('families').select('*').eq('invite_code', code).single();
-
+  const { data: fam, error } = await db.from('families').select('*').eq('invite_code', code).single();
   if (error || !fam) { showToast('Invalid code!', 'err'); return; }
   if (fam.member_count >= 6) { showToast('Squad is full! (max 6)', 'err'); return; }
 
@@ -160,19 +322,17 @@ async function joinFamily() {
   await db.from('users').update({ family_id: fam.id }).eq('id', currentUser.id);
 
   currentUser.family_id = fam.id;
-  saveLocal(currentUser);
   currentFamily = { ...fam, member_count: newCount };
   enterDashboard();
   showToast(`Joined "${fam.name}"! 🎉`, 'ok');
 }
 
 async function loadFamilyAndEnter(familyId) {
-  const { data: fam, error } = await db
-    .from('families').select('*').eq('id', familyId).single();
+  const { data: fam, error } = await db.from('families').select('*').eq('id', familyId).single();
 
   if (error || !fam) {
+    await db.from('users').update({ family_id: null }).eq('id', currentUser.id);
     currentUser.family_id = null;
-    saveLocal(currentUser);
     hideLoader();
     document.getElementById('display-username').textContent = currentUser.username;
     showScreen('screen-home');
@@ -193,10 +353,8 @@ async function leaveFamily() {
 
   realtimeSubs.forEach(s => db.removeChannel(s));
   realtimeSubs = [];
-
   currentUser.family_id = null;
   currentFamily = null;
-  saveLocal(currentUser);
 
   document.getElementById('display-username').textContent = currentUser.username;
   showScreen('screen-home');
@@ -206,10 +364,12 @@ async function leaveFamily() {
 function copyInviteCode() {
   navigator.clipboard.writeText(currentFamily.invite_code)
     .then(() => showToast('Code copied! 📋', 'ok'))
-    .catch(()  => showToast(currentFamily.invite_code, 'ok'));
+    .catch(() => showToast(currentFamily.invite_code, 'ok'));
 }
 
-// ── GAME REQUESTS ──
+// ═══════════════════════════════════
+// 🎮 GAME REQUESTS
+// ═══════════════════════════════════
 async function addGameRequest() {
   const input = document.getElementById('game-input');
   const game_name = input.value.trim();
@@ -226,25 +386,36 @@ async function addGameRequest() {
 }
 
 function gameHTML(r) {
+  const avatarHTML = r.avatar_url
+    ? `<div class="feed-avatar"><img src="${r.avatar_url}" alt=""/></div>`
+    : `<div class="feed-avatar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>`;
   return `<div class="feed-item">
-    <div class="meta"><span class="who">${esc(r.username)}</span><span>·</span><span>${ago(r.created_at)}</span></div>
+    <div class="meta">${avatarHTML}<span class="who">${esc(r.username)}</span><span>·</span><span>${ago(r.created_at)}</span></div>
     <div class="content">${esc(r.game_name)}</div>
   </div>`;
 }
 
 async function loadGames() {
-  const { data } = await db.from('game_requests').select('*')
-    .eq('family_id', currentFamily.id).order('created_at', { ascending: false });
+  // Join with users to get avatar
+  const { data } = await db.from('game_requests')
+    .select('*, users(avatar_url)')
+    .eq('family_id', currentFamily.id)
+    .order('created_at', { ascending: false });
+
   const el = document.getElementById('game-list');
   if (!data || !data.length) {
     el.innerHTML = '<div class="empty-msg">no requests yet — suggest one!</div>';
     updateCount('games-count', 0); return;
   }
-  el.innerHTML = data.map(gameHTML).join('');
+  // Merge avatar_url from joined users table
+  const enriched = data.map(r => ({ ...r, avatar_url: r.users?.avatar_url || null }));
+  el.innerHTML = enriched.map(gameHTML).join('');
   updateCount('games-count', data.length);
 }
 
-// ── CHECKPOINTS ──
+// ═══════════════════════════════════
+// 📝 CHECKPOINTS
+// ═══════════════════════════════════
 async function addCheckpoint() {
   const input = document.getElementById('checkpoint-input');
   const content = input.value.trim();
@@ -261,25 +432,34 @@ async function addCheckpoint() {
 }
 
 function checkpointHTML(c) {
+  const avatarHTML = c.avatar_url
+    ? `<div class="feed-avatar"><img src="${c.avatar_url}" alt=""/></div>`
+    : `<div class="feed-avatar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>`;
   return `<div class="feed-item">
-    <div class="meta"><span class="who">${esc(c.username)}</span><span>·</span><span>${ago(c.created_at)}</span></div>
+    <div class="meta">${avatarHTML}<span class="who">${esc(c.username)}</span><span>·</span><span>${ago(c.created_at)}</span></div>
     <div class="content">${esc(c.content)}</div>
   </div>`;
 }
 
 async function loadCheckpoints() {
-  const { data } = await db.from('checkpoints').select('*')
-    .eq('family_id', currentFamily.id).order('created_at', { ascending: false });
+  const { data } = await db.from('checkpoints')
+    .select('*, users(avatar_url)')
+    .eq('family_id', currentFamily.id)
+    .order('created_at', { ascending: false });
+
   const el = document.getElementById('checkpoint-list');
   if (!data || !data.length) {
     el.innerHTML = '<div class="empty-msg">no checkpoints yet — be first!</div>';
     updateCount('checkpoints-count', 0); return;
   }
-  el.innerHTML = data.map(checkpointHTML).join('');
+  const enriched = data.map(c => ({ ...c, avatar_url: c.users?.avatar_url || null }));
+  el.innerHTML = enriched.map(checkpointHTML).join('');
   updateCount('checkpoints-count', data.length);
 }
 
-// ── REALTIME ──
+// ═══════════════════════════════════
+// ⚡ REALTIME
+// ═══════════════════════════════════
 function subscribeRealtime() {
   const fid = currentFamily.id;
 
@@ -287,10 +467,13 @@ function subscribeRealtime() {
     .on('postgres_changes', {
       event: 'INSERT', schema: 'public',
       table: 'game_requests', filter: `family_id=eq.${fid}`
-    }, p => {
+    }, async p => {
+      // Fetch poster's avatar
+      const { data: u } = await db.from('users').select('avatar_url').eq('id', p.new.requested_by).single();
+      const enriched = { ...p.new, avatar_url: u?.avatar_url || null };
       const el = document.getElementById('game-list');
       el.querySelector('.empty-msg')?.remove();
-      el.insertAdjacentHTML('afterbegin', gameHTML(p.new));
+      el.insertAdjacentHTML('afterbegin', gameHTML(enriched));
       updateCount('games-count', el.querySelectorAll('.feed-item').length);
     }).subscribe();
 
@@ -298,22 +481,27 @@ function subscribeRealtime() {
     .on('postgres_changes', {
       event: 'INSERT', schema: 'public',
       table: 'checkpoints', filter: `family_id=eq.${fid}`
-    }, p => {
+    }, async p => {
+      const { data: u } = await db.from('users').select('avatar_url').eq('id', p.new.user_id).single();
+      const enriched = { ...p.new, avatar_url: u?.avatar_url || null };
       const el = document.getElementById('checkpoint-list');
       el.querySelector('.empty-msg')?.remove();
-      el.insertAdjacentHTML('afterbegin', checkpointHTML(p.new));
+      el.insertAdjacentHTML('afterbegin', checkpointHTML(enriched));
       updateCount('checkpoints-count', el.querySelectorAll('.feed-item').length);
     }).subscribe();
 
   realtimeSubs = [gameSub, cpSub];
 }
 
-// ── DASHBOARD ──
+// ═══════════════════════════════════
+// 🖥️ DASHBOARD
+// ═══════════════════════════════════
 function enterDashboard() {
   document.getElementById('family-name-display').textContent  = currentFamily.name;
   document.getElementById('invite-code-display').textContent  = currentFamily.invite_code;
   document.getElementById('member-count-display').textContent = `${currentFamily.member_count}/6`;
   document.getElementById('header-username').textContent      = currentUser.username;
+  updateAllAvatars(currentUser.avatar_url);
   hideLoader();
   showScreen('screen-family');
   loadGames();
@@ -321,7 +509,9 @@ function enterDashboard() {
   subscribeRealtime();
 }
 
-// ── UTILS ──
+// ═══════════════════════════════════
+// 🛠️ UTILITIES
+// ═══════════════════════════════════
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
