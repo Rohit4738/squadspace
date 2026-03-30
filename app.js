@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════
    SQUADSPACE · APP.JS
-   Fixed: loader never gets stuck, proper error handling
+   v3 — bulletproof loader, never gets stuck
 ═══════════════════════════════════════════════ */
 
 let db = null;
@@ -10,83 +10,83 @@ let realtimeSubs      = [];
 let pendingAvatarFile = null;
 let pendingEditFile   = null;
 let googleAvatarUrl   = null;
+let loaderDone        = false; // guard: only hide loader once
 
 // ═══════════════════════════════════
 // 🚀 BOOT
 // ═══════════════════════════════════
 window.addEventListener('load', async () => {
 
-  // ── Safety net: if anything goes wrong, never stay stuck ──
-  const loaderTimeout = setTimeout(() => {
-    console.warn('Loader timeout — forcing landing screen');
-    hideLoader();
-    showScreen('screen-landing');
-  }, 6000); // 6 seconds max on loader
+  // Hard timeout — no matter what happens, escape the loader in 5s
+  setTimeout(escapeLoader, 5000);
 
   let cfg;
   try {
     const res = await fetch('/api/config');
     cfg = await res.json();
-  } catch (e) {
-    clearTimeout(loaderTimeout);
-    hideLoader();
-    showScreen('screen-landing');
+  } catch {
+    escapeLoader();
     showToast('Connection error. Check your internet.', 'err');
     return;
   }
 
-  if (!cfg.url || !cfg.key) {
-    clearTimeout(loaderTimeout);
-    hideLoader();
-    showScreen('screen-landing');
-    showToast('App config missing. Contact support.', 'err');
+  if (!cfg?.url || !cfg?.key) {
+    escapeLoader();
+    showToast('App config missing.', 'err');
     return;
   }
 
-  db = supabase.createClient(cfg.url, cfg.key);
+  try {
+    db = supabase.createClient(cfg.url, cfg.key);
+  } catch {
+    escapeLoader();
+    return;
+  }
 
-  // onAuthStateChange fires once immediately with the current session
-  // (INITIAL_SESSION). This is how we detect returning users AND
-  // handle the OAuth redirect callback (Google sends user back here).
+  // onAuthStateChange fires immediately with INITIAL_SESSION
+  // On mobile after Google OAuth it fires SIGNED_IN
   db.auth.onAuthStateChange(async (event, session) => {
-    clearTimeout(loaderTimeout); // auth responded — cancel timeout
-
     if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
       if (session) {
         await handleSession(session);
       } else {
-        hideLoader();
-        showScreen('screen-landing');
+        escapeLoader();
       }
     } else if (event === 'SIGNED_OUT') {
-      currentUser   = null;
+      currentUser = null;
       currentFamily = null;
       realtimeSubs.forEach(s => db.removeChannel(s));
       realtimeSubs = [];
-      hideLoader();
-      showScreen('screen-landing');
+      escapeLoader();
     }
   });
 });
 
-// ── Handle a valid Supabase session ──
-async function handleSession(session) {
-  const authUser = session.user;
-  googleAvatarUrl = authUser.user_metadata?.avatar_url || null;
+// Always-safe loader hide — shows landing if no screen is active yet
+function escapeLoader() {
+  if (loaderDone) return;
+  loaderDone = true;
+  document.getElementById('loader').classList.add('hidden');
+  // If no screen was activated yet, show landing
+  const anyActive = document.querySelector('.screen.active');
+  if (!anyActive) showScreen('screen-landing');
+}
 
+async function handleSession(session) {
   try {
+    const authUser = session.user;
+    googleAvatarUrl = authUser.user_metadata?.avatar_url || null;
+
     const { data: profile, error } = await db
       .from('users').select('*').eq('id', authUser.id).single();
 
-    if (error && error.code !== 'PGRST116') {
-      // PGRST116 = row not found (expected for new users). Anything else is a real error.
-      throw error;
-    }
+    // PGRST116 = no row found = new user, that's fine
+    if (error && error.code !== 'PGRST116') throw error;
 
-    if (!profile || !profile.username) {
-      hideLoader();
+    if (!profile?.username) {
       prefillProfileSetup(authUser);
       showScreen('screen-profile');
+      escapeLoader();
       return;
     }
 
@@ -97,15 +97,13 @@ async function handleSession(session) {
     if (currentUser.family_id) {
       await loadFamilyAndEnter(currentUser.family_id);
     } else {
-      hideLoader();
       document.getElementById('display-username').textContent = currentUser.username;
       showScreen('screen-home');
+      escapeLoader();
     }
-
   } catch (e) {
-    console.error('Session error:', e);
-    hideLoader();
-    showScreen('screen-landing');
+    console.error('handleSession error:', e);
+    escapeLoader();
     showToast('Something went wrong. Try signing in again.', 'err');
   }
 }
@@ -117,15 +115,9 @@ function prefillProfileSetup(authUser) {
     document.getElementById('profile-username').value = suggested;
   }
   const preview = document.getElementById('avatar-preview');
-  if (googleAvatarUrl) {
-    preview.innerHTML = `<img src="${googleAvatarUrl}" alt="avatar"/>`;
-  } else {
-    preview.innerHTML = defaultAvatarSVG(22);
-  }
-}
-
-function hideLoader() {
-  document.getElementById('loader').classList.add('hidden');
+  preview.innerHTML = googleAvatarUrl
+    ? `<img src="${googleAvatarUrl}" alt="avatar"/>`
+    : defaultAvatarSVG(22);
 }
 
 // ═══════════════════════════════════
@@ -135,29 +127,30 @@ async function signInWithGoogle() {
   const btn = document.getElementById('google-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Opening Google...'; }
 
-  const { error } = await db.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: window.location.origin,
-      queryParams: { prompt: 'select_account' }
-    }
-  });
-
-  if (error) {
-    if (btn) { btn.disabled = false; btn.innerHTML = googleBtnContent(); }
-    showToast('Google sign-in failed. Check setup.', 'err');
-    console.error('OAuth error:', error);
+  try {
+    const { error } = await db.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: { prompt: 'select_account' }
+      }
+    });
+    if (error) throw error;
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = googleBtnHTML(); }
+    showToast('Google sign-in failed. Try again.', 'err');
+    console.error(e);
   }
-  // On success: browser redirects to Google. Nothing more runs here.
 }
 
-function googleBtnContent() {
+function googleBtnHTML() {
   return `<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Continue with Google`;
 }
 
 async function signOut() {
   realtimeSubs.forEach(s => db.removeChannel(s));
   realtimeSubs = [];
+  loaderDone = false;
   await db.auth.signOut();
 }
 
@@ -205,8 +198,7 @@ async function saveProfile(skipPhoto = false) {
 // ═══════════════════════════════════
 function openEditProfile() {
   document.getElementById('edit-username').value = currentUser.username;
-  const preview = document.getElementById('edit-avatar-preview');
-  preview.innerHTML = currentUser.avatar_url
+  document.getElementById('edit-avatar-preview').innerHTML = currentUser.avatar_url
     ? `<img src="${currentUser.avatar_url}" alt="avatar"/>`
     : defaultAvatarSVG(20);
   pendingEditFile = null;
@@ -251,11 +243,11 @@ async function saveEditProfile() {
 // 📦 AVATAR
 // ═══════════════════════════════════
 async function uploadAvatar(userId, file) {
-  const ext  = file.name.split('.').pop();
+  const ext = file.name.split('.').pop();
   const path = `${userId}/avatar.${ext}`;
   const { error } = await db.storage.from('avatars')
     .upload(path, file, { upsert: true, contentType: file.type });
-  if (error) { showToast('Upload failed', 'err'); console.error(error); return null; }
+  if (error) { showToast('Upload failed', 'err'); return null; }
   const { data } = db.storage.from('avatars').getPublicUrl(path);
   return data.publicUrl + '?t=' + Date.now();
 }
@@ -265,11 +257,9 @@ function renderAvatarEl(elId, avatarUrl, username) {
   if (!el) return;
   if (avatarUrl) {
     el.innerHTML = `<img src="${avatarUrl}" alt=""/>`;
-    el.style.background = '';
-    el.style.color = '';
+    el.style.cssText = '';
   } else {
-    const initials = (username || '?').slice(0, 2).toUpperCase();
-    el.textContent = initials;
+    el.textContent = (username || '?').slice(0, 2).toUpperCase();
     el.style.background = stringToColor(username || '');
     el.style.color = '#0a0a0c';
     el.style.fontSize = '0.65rem';
@@ -278,11 +268,9 @@ function renderAvatarEl(elId, avatarUrl, username) {
 }
 
 function feedAvatarHTML(avatarUrl, username) {
-  if (avatarUrl) {
-    return `<div class="feed-avatar"><img src="${avatarUrl}" alt=""/></div>`;
-  }
-  const initials = (username || '?').slice(0, 2).toUpperCase();
-  return `<div class="feed-avatar" style="background:${stringToColor(username)};color:#0a0a0c;font-size:0.55rem;font-weight:700">${initials}</div>`;
+  if (avatarUrl) return `<div class="feed-avatar"><img src="${avatarUrl}" alt=""/></div>`;
+  const i = (username || '?').slice(0, 2).toUpperCase();
+  return `<div class="feed-avatar" style="background:${stringToColor(username)};color:#0a0a0c;font-size:0.55rem;font-weight:700">${i}</div>`;
 }
 
 function defaultAvatarSVG(s) {
@@ -290,16 +278,16 @@ function defaultAvatarSVG(s) {
 }
 
 function stringToColor(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  return `hsl(${Math.abs(hash) % 360}, 65%, 58%)`;
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
+  return `hsl(${Math.abs(h) % 360},65%,58%)`;
 }
 
 // ═══════════════════════════════════
 // 🏠 HOME
 // ═══════════════════════════════════
 function toggleSection(which) {
-  const ids  = { create: 'create-section', join: 'join-section' };
+  const ids = { create: 'create-section', join: 'join-section' };
   const btns = {
     create: document.querySelector('#card-create .choice-toggle'),
     join:   document.querySelector('#card-join .choice-toggle')
@@ -318,8 +306,8 @@ function toggleSection(which) {
 // 👨‍👩‍👧‍👦 FAMILY
 // ═══════════════════════════════════
 function genCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 6 }, () => c[Math.floor(Math.random() * c.length)]).join('');
 }
 
 async function createFamily() {
@@ -357,9 +345,9 @@ async function loadFamilyAndEnter(familyId) {
   if (error || !fam) {
     await db.from('users').update({ family_id: null }).eq('id', currentUser.id);
     currentUser.family_id = null;
-    hideLoader();
     document.getElementById('display-username').textContent = currentUser.username;
     showScreen('screen-home');
+    escapeLoader();
     return;
   }
   currentFamily = fam;
@@ -412,7 +400,7 @@ async function loadGames() {
     .select('*, users(avatar_url)').eq('family_id', currentFamily.id)
     .order('created_at', { ascending: false });
   const el = document.getElementById('game-list');
-  if (!data || !data.length) {
+  if (!data?.length) {
     el.innerHTML = '<div class="empty-msg">no requests yet — suggest one!</div>';
     updateCount('games-count', 0); return;
   }
@@ -447,7 +435,7 @@ async function loadCheckpoints() {
     .select('*, users(avatar_url)').eq('family_id', currentFamily.id)
     .order('created_at', { ascending: false });
   const el = document.getElementById('checkpoint-list');
-  if (!data || !data.length) {
+  if (!data?.length) {
     el.innerHTML = '<div class="empty-msg">no checkpoints yet — be first!</div>';
     updateCount('checkpoints-count', 0); return;
   }
@@ -493,8 +481,8 @@ function enterDashboard() {
   document.getElementById('header-username').textContent      = currentUser.username;
   renderAvatarEl('dash-avatar', currentUser.avatar_url, currentUser.username);
   renderAvatarEl('home-avatar', currentUser.avatar_url, currentUser.username);
-  hideLoader();
   showScreen('screen-family');
+  escapeLoader();
   loadGames();
   loadCheckpoints();
   subscribeRealtime();
