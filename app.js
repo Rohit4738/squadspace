@@ -1,38 +1,56 @@
 /* ═══════════════════════════════════════════════
    SQUADSPACE · APP.JS
-   Auth: Supabase Google OAuth
-   Storage: Supabase Storage (avatars)
-   Sessions: Supabase handles persistence automatically
+   Fixed: loader never gets stuck, proper error handling
 ═══════════════════════════════════════════════ */
 
 let db = null;
-let currentUser        = null;
-let currentFamily      = null;
-let realtimeSubs       = [];
-let pendingAvatarFile  = null;
-let pendingEditFile    = null;
-let googleAvatarUrl    = null; // avatar from Google account
+let currentUser       = null;
+let currentFamily     = null;
+let realtimeSubs      = [];
+let pendingAvatarFile = null;
+let pendingEditFile   = null;
+let googleAvatarUrl   = null;
 
 // ═══════════════════════════════════
 // 🚀 BOOT
 // ═══════════════════════════════════
 window.addEventListener('load', async () => {
+
+  // ── Safety net: if anything goes wrong, never stay stuck ──
+  const loaderTimeout = setTimeout(() => {
+    console.warn('Loader timeout — forcing landing screen');
+    hideLoader();
+    showScreen('screen-landing');
+  }, 6000); // 6 seconds max on loader
+
   let cfg;
   try {
     const res = await fetch('/api/config');
     cfg = await res.json();
-  } catch {
-    showToast('Failed to load. Refresh.', 'err');
+  } catch (e) {
+    clearTimeout(loaderTimeout);
+    hideLoader();
+    showScreen('screen-landing');
+    showToast('Connection error. Check your internet.', 'err');
+    return;
+  }
+
+  if (!cfg.url || !cfg.key) {
+    clearTimeout(loaderTimeout);
+    hideLoader();
+    showScreen('screen-landing');
+    showToast('App config missing. Contact support.', 'err');
     return;
   }
 
   db = supabase.createClient(cfg.url, cfg.key);
 
-  // Supabase auth state handles everything:
-  // - fresh visitors
-  // - returning users (session stored in browser)
-  // - magic link / OAuth redirects
+  // onAuthStateChange fires once immediately with the current session
+  // (INITIAL_SESSION). This is how we detect returning users AND
+  // handle the OAuth redirect callback (Google sends user back here).
   db.auth.onAuthStateChange(async (event, session) => {
+    clearTimeout(loaderTimeout); // auth responded — cancel timeout
+
     if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
       if (session) {
         await handleSession(session);
@@ -41,7 +59,7 @@ window.addEventListener('load', async () => {
         showScreen('screen-landing');
       }
     } else if (event === 'SIGNED_OUT') {
-      currentUser = null;
+      currentUser   = null;
       currentFamily = null;
       realtimeSubs.forEach(s => db.removeChannel(s));
       realtimeSubs = [];
@@ -51,54 +69,58 @@ window.addEventListener('load', async () => {
   });
 });
 
+// ── Handle a valid Supabase session ──
 async function handleSession(session) {
   const authUser = session.user;
-
-  // Save Google avatar URL for use during profile setup
   googleAvatarUrl = authUser.user_metadata?.avatar_url || null;
 
-  // Check if user has a profile row in our users table
-  const { data: profile } = await db
-    .from('users')
-    .select('*')
-    .eq('id', authUser.id)
-    .single();
+  try {
+    const { data: profile, error } = await db
+      .from('users').select('*').eq('id', authUser.id).single();
 
-  if (!profile || !profile.username) {
-    // New user — needs username + optional photo
+    if (error && error.code !== 'PGRST116') {
+      // PGRST116 = row not found (expected for new users). Anything else is a real error.
+      throw error;
+    }
+
+    if (!profile || !profile.username) {
+      hideLoader();
+      prefillProfileSetup(authUser);
+      showScreen('screen-profile');
+      return;
+    }
+
+    currentUser = profile;
+    renderAvatarEl('home-avatar', profile.avatar_url, profile.username);
+    renderAvatarEl('dash-avatar', profile.avatar_url, profile.username);
+
+    if (currentUser.family_id) {
+      await loadFamilyAndEnter(currentUser.family_id);
+    } else {
+      hideLoader();
+      document.getElementById('display-username').textContent = currentUser.username;
+      showScreen('screen-home');
+    }
+
+  } catch (e) {
+    console.error('Session error:', e);
     hideLoader();
-    prefillProfileSetup(authUser);
-    showScreen('screen-profile');
-    return;
-  }
-
-  currentUser = profile;
-  renderAvatarEl('home-avatar', profile.avatar_url, profile.username);
-  renderAvatarEl('dash-avatar', profile.avatar_url, profile.username);
-
-  if (currentUser.family_id) {
-    await loadFamilyAndEnter(currentUser.family_id);
-  } else {
-    hideLoader();
-    document.getElementById('display-username').textContent = currentUser.username;
-    showScreen('screen-home');
+    showScreen('screen-landing');
+    showToast('Something went wrong. Try signing in again.', 'err');
   }
 }
 
 function prefillProfileSetup(authUser) {
-  // Pre-fill username from Google display name
-  const displayName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || '';
-  if (displayName) {
-    const suggested = displayName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+  const name = authUser.user_metadata?.full_name || authUser.user_metadata?.name || '';
+  if (name) {
+    const suggested = name.split(' ')[0].toLowerCase().replace(/[^a-z0-9_]/g, '');
     document.getElementById('profile-username').value = suggested;
   }
-
-  // Show their Google profile picture as default
   const preview = document.getElementById('avatar-preview');
   if (googleAvatarUrl) {
-    preview.innerHTML = `<img src="${googleAvatarUrl}" alt="avatar" crossorigin="anonymous"/>`;
+    preview.innerHTML = `<img src="${googleAvatarUrl}" alt="avatar"/>`;
   } else {
-    preview.innerHTML = defaultAvatarSVG(20);
+    preview.innerHTML = defaultAvatarSVG(22);
   }
 }
 
@@ -107,28 +129,36 @@ function hideLoader() {
 }
 
 // ═══════════════════════════════════
-// 🔐 AUTH — Google OAuth
+// 🔐 AUTH
 // ═══════════════════════════════════
 async function signInWithGoogle() {
+  const btn = document.getElementById('google-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening Google...'; }
+
   const { error } = await db.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo: window.location.origin,
-      queryParams: {
-        access_type: 'offline',
-        prompt: 'select_account', // forces Google account picker every time
-      }
+      queryParams: { prompt: 'select_account' }
     }
   });
-  if (error) { showToast('Google sign-in failed. Try again.', 'err'); console.error(error); }
-  // Browser redirects to Google — no further code runs here
+
+  if (error) {
+    if (btn) { btn.disabled = false; btn.innerHTML = googleBtnContent(); }
+    showToast('Google sign-in failed. Check setup.', 'err');
+    console.error('OAuth error:', error);
+  }
+  // On success: browser redirects to Google. Nothing more runs here.
+}
+
+function googleBtnContent() {
+  return `<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Continue with Google`;
 }
 
 async function signOut() {
   realtimeSubs.forEach(s => db.removeChannel(s));
   realtimeSubs = [];
   await db.auth.signOut();
-  // onAuthStateChange fires SIGNED_OUT and resets UI
 }
 
 // ═══════════════════════════════════
@@ -143,7 +173,6 @@ function previewAvatar(event) {
     `<img src="${URL.createObjectURL(file)}" alt="avatar"/>`;
 }
 
-// skipPhoto = true when user clicks "skip" link
 async function saveProfile(skipPhoto = false) {
   const username = document.getElementById('profile-username').value.trim();
   if (!username || username.length < 2) { showToast('Name needs 2+ characters', 'err'); return; }
@@ -152,15 +181,11 @@ async function saveProfile(skipPhoto = false) {
   if (!authUser) { showToast('Not signed in', 'err'); return; }
 
   let avatar_url = null;
-
   if (!skipPhoto && pendingAvatarFile) {
-    // User uploaded a custom photo
     avatar_url = await uploadAvatar(authUser.id, pendingAvatarFile);
   } else if (!skipPhoto && googleAvatarUrl) {
-    // Use their Google profile picture (no upload needed — it's already a URL)
     avatar_url = googleAvatarUrl;
   }
-  // if skipPhoto — avatar_url stays null
 
   const { data, error } = await db.from('users')
     .upsert({ id: authUser.id, email: authUser.email, username, avatar_url, family_id: null })
@@ -176,16 +201,14 @@ async function saveProfile(skipPhoto = false) {
 }
 
 // ═══════════════════════════════════
-// ✏️ EDIT PROFILE MODAL
+// ✏️ EDIT PROFILE
 // ═══════════════════════════════════
 function openEditProfile() {
   document.getElementById('edit-username').value = currentUser.username;
   const preview = document.getElementById('edit-avatar-preview');
-  if (currentUser.avatar_url) {
-    preview.innerHTML = `<img src="${currentUser.avatar_url}" alt="avatar"/>`;
-  } else {
-    preview.innerHTML = defaultAvatarSVG(20);
-  }
+  preview.innerHTML = currentUser.avatar_url
+    ? `<img src="${currentUser.avatar_url}" alt="avatar"/>`
+    : defaultAvatarSVG(20);
   pendingEditFile = null;
   document.getElementById('modal-profile').classList.remove('hidden');
 }
@@ -207,20 +230,14 @@ function previewEditAvatar(event) {
 async function saveEditProfile() {
   const username = document.getElementById('edit-username').value.trim();
   if (!username || username.length < 2) { showToast('Name needs 2+ characters', 'err'); return; }
-
   let avatar_url = currentUser.avatar_url;
   if (pendingEditFile) {
-    const uploaded = await uploadAvatar(currentUser.id, pendingEditFile);
-    if (uploaded) avatar_url = uploaded;
+    const up = await uploadAvatar(currentUser.id, pendingEditFile);
+    if (up) avatar_url = up;
   }
-
   const { data, error } = await db.from('users')
-    .update({ username, avatar_url })
-    .eq('id', currentUser.id)
-    .select().single();
-
+    .update({ username, avatar_url }).eq('id', currentUser.id).select().single();
   if (error) { showToast('Update failed', 'err'); return; }
-
   currentUser = data;
   renderAvatarEl('home-avatar', currentUser.avatar_url, currentUser.username);
   renderAvatarEl('dash-avatar', currentUser.avatar_url, currentUser.username);
@@ -231,12 +248,13 @@ async function saveEditProfile() {
 }
 
 // ═══════════════════════════════════
-// 📦 AVATAR HELPERS
+// 📦 AVATAR
 // ═══════════════════════════════════
 async function uploadAvatar(userId, file) {
   const ext  = file.name.split('.').pop();
   const path = `${userId}/avatar.${ext}`;
-  const { error } = await db.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type });
+  const { error } = await db.storage.from('avatars')
+    .upload(path, file, { upsert: true, contentType: file.type });
   if (error) { showToast('Upload failed', 'err'); console.error(error); return null; }
   const { data } = db.storage.from('avatars').getPublicUrl(path);
   return data.publicUrl + '?t=' + Date.now();
@@ -246,14 +264,16 @@ function renderAvatarEl(elId, avatarUrl, username) {
   const el = document.getElementById(elId);
   if (!el) return;
   if (avatarUrl) {
-    el.innerHTML = `<img src="${avatarUrl}" alt="${esc(username)}"/>`;
+    el.innerHTML = `<img src="${avatarUrl}" alt=""/>`;
+    el.style.background = '';
+    el.style.color = '';
   } else {
-    // Initials fallback
     const initials = (username || '?').slice(0, 2).toUpperCase();
-    el.innerHTML = initials;
-    el.style.fontSize = '0.65rem';
+    el.textContent = initials;
     el.style.background = stringToColor(username || '');
     el.style.color = '#0a0a0c';
+    el.style.fontSize = '0.65rem';
+    el.style.fontWeight = '700';
   }
 }
 
@@ -262,20 +282,17 @@ function feedAvatarHTML(avatarUrl, username) {
     return `<div class="feed-avatar"><img src="${avatarUrl}" alt=""/></div>`;
   }
   const initials = (username || '?').slice(0, 2).toUpperCase();
-  const bg = stringToColor(username || '');
-  return `<div class="feed-avatar" style="background:${bg};color:#0a0a0c;font-size:0.55rem;font-weight:700">${initials}</div>`;
+  return `<div class="feed-avatar" style="background:${stringToColor(username)};color:#0a0a0c;font-size:0.55rem;font-weight:700">${initials}</div>`;
 }
 
-function defaultAvatarSVG(size) {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
+function defaultAvatarSVG(s) {
+  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
 }
 
-// Generate a consistent colour from a string (for initials fallback)
 function stringToColor(str) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  const h = Math.abs(hash) % 360;
-  return `hsl(${h}, 70%, 60%)`;
+  return `hsl(${Math.abs(hash) % 360}, 65%, 58%)`;
 }
 
 // ═══════════════════════════════════
@@ -379,7 +396,7 @@ async function addGameRequest() {
     family_id: currentFamily.id, requested_by: currentUser.id,
     username: currentUser.username, game_name
   });
-  if (error) { showToast('Failed to add.', 'err'); return; }
+  if (error) { showToast('Failed to add.', 'err'); console.error(error); return; }
   input.value = '';
 }
 
@@ -392,8 +409,7 @@ function gameHTML(r) {
 
 async function loadGames() {
   const { data } = await db.from('game_requests')
-    .select('*, users(avatar_url)')
-    .eq('family_id', currentFamily.id)
+    .select('*, users(avatar_url)').eq('family_id', currentFamily.id)
     .order('created_at', { ascending: false });
   const el = document.getElementById('game-list');
   if (!data || !data.length) {
@@ -415,7 +431,7 @@ async function addCheckpoint() {
     family_id: currentFamily.id, user_id: currentUser.id,
     username: currentUser.username, content
   });
-  if (error) { showToast('Failed to post.', 'err'); return; }
+  if (error) { showToast('Failed to post.', 'err'); console.error(error); return; }
   input.value = '';
 }
 
@@ -428,8 +444,7 @@ function checkpointHTML(c) {
 
 async function loadCheckpoints() {
   const { data } = await db.from('checkpoints')
-    .select('*, users(avatar_url)')
-    .eq('family_id', currentFamily.id)
+    .select('*, users(avatar_url)').eq('family_id', currentFamily.id)
     .order('created_at', { ascending: false });
   const el = document.getElementById('checkpoint-list');
   if (!data || !data.length) {
