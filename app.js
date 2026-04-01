@@ -1,25 +1,26 @@
 /* ═══════════════════════════════════════════════
-   SQUADSPACE · APP.JS
-   v3 — bulletproof loader, never gets stuck
+   SQUADSPACE · APP.JS  v4
+   Fix: explicit session persistence, bulletproof loader
 ═══════════════════════════════════════════════ */
 
-let db = null;
-let currentUser       = null;
-let currentFamily     = null;
-let realtimeSubs      = [];
+let db            = null;
+let currentUser   = null;
+let currentFamily = null;
+let realtimeSubs  = [];
 let pendingAvatarFile = null;
 let pendingEditFile   = null;
 let googleAvatarUrl   = null;
-let loaderDone        = false; // guard: only hide loader once
+let loaderDone    = false;
 
 // ═══════════════════════════════════
 // 🚀 BOOT
 // ═══════════════════════════════════
 window.addEventListener('load', async () => {
 
-  // Hard timeout — no matter what happens, escape the loader in 5s
+  // Absolute hard escape — loader NEVER stays forever
   setTimeout(escapeLoader, 5000);
 
+  // ── Fetch Supabase credentials from server ──
   let cfg;
   try {
     const res = await fetch('/api/config');
@@ -36,21 +37,29 @@ window.addEventListener('load', async () => {
     return;
   }
 
-  try {
-    db = supabase.createClient(cfg.url, cfg.key);
-  } catch {
-    escapeLoader();
-    return;
-  }
+  // ── Create Supabase client with EXPLICIT session persistence ──
+  // This is what fixes "login required on every refresh"
+  // persistSession + localStorage means the session survives
+  // page reloads, tab closes, and phone screen locks
+  db = supabase.createClient(cfg.url, cfg.key, {
+    auth: {
+      persistSession:     true,           // save session to storage
+      storageKey:         'squadspace',   // unique key so nothing clears it
+      storage:            window.localStorage,
+      autoRefreshToken:   true,           // keep session alive automatically
+      detectSessionInUrl: true,           // catch Google OAuth redirect
+    }
+  });
 
-  // onAuthStateChange fires immediately with INITIAL_SESSION
-  // On mobile after Google OAuth it fires SIGNED_IN
+  // onAuthStateChange fires with INITIAL_SESSION immediately on load
+  // (reads from localStorage — so returning users skip the login screen)
+  // It also fires SIGNED_IN after Google OAuth redirect completes
   db.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+    if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
       if (session) {
         await handleSession(session);
       } else {
-        escapeLoader();
+        escapeLoader(); // no session = show landing
       }
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
@@ -62,16 +71,17 @@ window.addEventListener('load', async () => {
   });
 });
 
-// Always-safe loader hide — shows landing if no screen is active yet
+// ── Always-safe loader dismiss ──
 function escapeLoader() {
   if (loaderDone) return;
   loaderDone = true;
   document.getElementById('loader').classList.add('hidden');
-  // If no screen was activated yet, show landing
-  const anyActive = document.querySelector('.screen.active');
-  if (!anyActive) showScreen('screen-landing');
+  if (!document.querySelector('.screen.active')) {
+    showScreen('screen-landing');
+  }
 }
 
+// ── Handle valid session ──
 async function handleSession(session) {
   try {
     const authUser = session.user;
@@ -80,7 +90,7 @@ async function handleSession(session) {
     const { data: profile, error } = await db
       .from('users').select('*').eq('id', authUser.id).single();
 
-    // PGRST116 = no row found = new user, that's fine
+    // PGRST116 = row not found = new user, fine
     if (error && error.code !== 'PGRST116') throw error;
 
     if (!profile?.username) {
@@ -101,6 +111,7 @@ async function handleSession(session) {
       showScreen('screen-home');
       escapeLoader();
     }
+
   } catch (e) {
     console.error('handleSession error:', e);
     escapeLoader();
@@ -114,14 +125,13 @@ function prefillProfileSetup(authUser) {
     const suggested = name.split(' ')[0].toLowerCase().replace(/[^a-z0-9_]/g, '');
     document.getElementById('profile-username').value = suggested;
   }
-  const preview = document.getElementById('avatar-preview');
-  preview.innerHTML = googleAvatarUrl
+  document.getElementById('avatar-preview').innerHTML = googleAvatarUrl
     ? `<img src="${googleAvatarUrl}" alt="avatar"/>`
     : defaultAvatarSVG(22);
 }
 
 // ═══════════════════════════════════
-// 🔐 AUTH
+// 🔐 AUTH — Google OAuth
 // ═══════════════════════════════════
 async function signInWithGoogle() {
   const btn = document.getElementById('google-btn');
@@ -136,6 +146,7 @@ async function signInWithGoogle() {
       }
     });
     if (error) throw error;
+    // Browser now redirects to Google — code stops here
   } catch (e) {
     if (btn) { btn.disabled = false; btn.innerHTML = googleBtnHTML(); }
     showToast('Google sign-in failed. Try again.', 'err');
@@ -150,8 +161,11 @@ function googleBtnHTML() {
 async function signOut() {
   realtimeSubs.forEach(s => db.removeChannel(s));
   realtimeSubs = [];
-  loaderDone = false;
+  currentUser = null;
+  currentFamily = null;
+  loaderDone = false; // allow loader to show on next sign-in
   await db.auth.signOut();
+  // onAuthStateChange fires SIGNED_OUT → escapeLoader() → landing screen
 }
 
 // ═══════════════════════════════════
@@ -199,8 +213,7 @@ async function saveProfile(skipPhoto = false) {
 function openEditProfile() {
   document.getElementById('edit-username').value = currentUser.username;
   document.getElementById('edit-avatar-preview').innerHTML = currentUser.avatar_url
-    ? `<img src="${currentUser.avatar_url}" alt="avatar"/>`
-    : defaultAvatarSVG(20);
+    ? `<img src="${currentUser.avatar_url}" alt="avatar"/>` : defaultAvatarSVG(20);
   pendingEditFile = null;
   document.getElementById('modal-profile').classList.remove('hidden');
 }
